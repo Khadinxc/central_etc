@@ -1,0 +1,16 @@
+Microsoft Sentinel SIEM Home Lab:
+https://lnkd.in/eFeDibft
+
+Microsoft Azure AD Home Lab:
+https://lnkd.in/ea3k2gzJ
+
+Vulnerability Management Lab (Nessus):
+https://lnkd.in/ewbciCHs
+
+How To Code a Keylogger:
+https://lnkd.in/eNZ8-3EU
+
+Coding a File Integrity Monitor:
+https://lnkd.in/ecAGTQN8
+
+Taking the Mitre Python code from the DE101 course and building a Mitre look up and mapping application for quick reference without going to the GUI.

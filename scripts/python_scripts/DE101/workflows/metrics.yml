@@ -1,0 +1,27 @@
+name: Metrics
+
+on:
+  workflow_dispatch:
+    schedule:
+      - cron: "0 0 * * FRI"
+
+jobs:
+  metrics:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.COURSE_TOKEN}}  
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11.4'  
+      - run: pip install python-dateutil
+      - run: python development/toml_to_report.py
+      - run: python development/toml_to_csv.py
+      - run: python development/toml_to_nav.py
+      - run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add .
+          git commit -m "Updating Metrics"
+          git push -f

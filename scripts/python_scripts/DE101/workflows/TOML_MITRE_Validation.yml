@@ -1,0 +1,20 @@
+name: TOML/MITRE Validation
+
+on:
+  push:
+    path:
+      -'**.toml'
+  workflow_dispatch:
+
+jobs:
+  toml-validation:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11.4'
+      - run: pip install requests
+      - run: python development/validation.py
+      - run: python development/mitre.py    

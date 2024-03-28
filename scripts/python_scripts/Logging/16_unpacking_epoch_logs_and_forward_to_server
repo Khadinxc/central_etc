@@ -1,0 +1,76 @@
+#!/usr/bin/python
+import re
+import logging
+import logging.handlers
+import socket
+import sys
+ 
+# Expecting 2 parameters
+if len(sys.argv) != 3:
+    sys.exit("Usage: sys.argv[0] <input filename> <destination syslog server>")
+infile = sys.argv[1]
+syslog_server = sys.argv[2]
+    
+linecount = 0
+outcount = 0
+matchcount = 0
+outline = ''
+#want = False
+ 
+# Initialise the syslog handler
+my_logger = logging.getLogger('MyLogger')
+my_logger.setLevel(logging.INFO)
+handler = logging.handlers.SysLogHandler(address = (syslog_server,514),  socktype=socket.SOCK_DGRAM)
+ 
+my_logger.addHandler(handler)
+ 
+#outfile = open("extracted","a")
+ 
+with open(infile) as huntsman_data:
+    # Loop through the Huntsman data and convert them into single line events,
+    for line in huntsman_data:
+        linecount = linecount + 1
+#        if re.match('Logon\sType:\s+2',line) or re.match('LogonType:\s+2',line) or re.match('Logon\sType:\s+7',line) or re.match('LogonType:\s+7',line):
+#            want = True
+ 
+        # Each record appears to end with '<T3EVT>'
+        if '<T3EVT>' in line:
+            outline = outline + line.strip('\r\n')
+            outcount = outcount + 1
+ 
+            # Logoff events
+            if '<T3FLD>4634<T3FLD>' in outline:
+                # Send the combined message to the syslog server
+                my_logger.info(outline)
+                my_logger.handlers[0].flush()
+#                outfile.write(outline)
+                outline = ''
+#                want = False
+                matchcount = matchcount + 1
+ 
+            # Logon (event code: 4624) and LogonType: 2 or 7
+            elif '<T3FLD>4624<T3FLD>' in outline:
+#                print("==============================")
+#                print(outline)
+#                print("==============================")
+#                if want: 
+#                    print(">>>>>>>>>>>>>>>>> MATCH <<<<<<<<<<<<<<<<<<<<<<<<<")
+                # Send the combined message to the syslog server
+                my_logger.info(outline)
+                my_logger.handlers[0].flush()
+#                outfile.write(outline)
+                outline = ''
+#                    want = False
+                matchcount = matchcount + 1
+ 
+            # Report progress
+            if (linecount % 1000 == 0):
+                print("Input lines: {}, Events discovered: {}, Events sent {}".format(linecount,outcount,matchcount))
+ 
+            # Reset the line and restart
+            outline = ''
+        else:
+            outline = outline + line.strip('\r\n')
+ 
+huntsman_data.close
+#outfile.close
