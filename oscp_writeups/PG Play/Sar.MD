@@ -21,6 +21,7 @@
 | 10. | This worked and I was able to obtain the proof.txt for this machine |
 
 ## Lessons Learnt:
+| --- | --- |
 | 1. | This machine reminded me of a couple of things I learnt from the TCM Academy course on Ethical hacking, which was taking advantage of files that were either directly ran as root and I was capable of modifying. |
 | 2. | The value of a tty shell |
 | --- | --- |
