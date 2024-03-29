@@ -38,7 +38,7 @@ The basic steps I took are below.
 | 10. | I decided to credential stuff the list of users I found earlier with I cat'd the passwd file. This password ended up being the same as roots and the machine was pwned. |
 | 10.1 | ![ImgPlaceholder](img/codo-image-4.png) |
 
-| Lessons Learnt: | |
+|  | Lessons Learnt: |
 | --- | --- |
 | 1. | Complete the functionality test of a website if you come across one, if you get admin access on the site, complete it again. I could of skipped utilizing the exploit from GitHub though I'm thankful for it and saved time by running the exploit myself which I'd already tested on the avatar upload for standard user accounts. superuser/admin areas typically have lower defenses then outside them. |
 | 2. | Don't reuse passwords or store them in your config files. |
