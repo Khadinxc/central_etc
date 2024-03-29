@@ -25,7 +25,7 @@ The basic steps I took are below.
 | 4.1 | ![ImgPlaceholder](img/codo-image-1.png) |
 | 5. | I found an exploit from Vikaran101s Github https://github.com/Vikaran101/CVE-2022-31854/tree/main and tested this out. |
 | 5.1 | Unfortunately when trying to utilize this exploit I ran into an error, thankfully Vikaran101 pointed me in the right direction with his error code and pointed out trying to do the upload manually. I realised that this was just an automated version of an insecure file upload which I could of found myself if I had of explored the admin panel more effectively. |
-| 5.2 | ![ImgPlaceholder](img/codo-image-1.png) | 
+| 5.2 | ![ImgPlaceholder](img/codo-image-2.png) | 
 | 6. | I decided to use Burpsuite to capture the file upload exploited through the admin panel. I navigated to admin panel> global settings> change forum logo for codoforum and uploaded the first picture that was in my files (a TCMAcademy logo those who have done the web exploitation section of the Practical Ethical Hacking course from them will understand why :P ) |
 | 6.1 | I caught the file upload with Burp suite and modified the PNG upload to have a .php extension and left the magic bytes of the image and some of the PNG unicode/garbage that comes up and added my php one liner into it.  |
 | 6.2 | ![ImgPlaceholder](img/codo-image-3.png) |
