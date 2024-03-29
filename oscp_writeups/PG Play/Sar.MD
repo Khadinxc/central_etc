@@ -19,8 +19,8 @@
 | 8. | When I read the finally.sh I found the scripts only purpose is to run another script called write.sh every 5th minute, I had read, write and execute permissions of the write.sh file. All the write.sh file did was create a empty file in the tmp directory called gateway. |
 | 9. | I modified write.sh to include the socat reverse shell, since the cronjob for finally.sh ran every 5 minutes it would provide me, in theory which a reverse shell as root. |
 | 10. | This worked and I was able to obtain the proof.txt for this machine |
-| --- | --- |
-|Lessons Learnt: |
+
+## Lessons Learnt:
 | 1. | This machine reminded me of a couple of things I learnt from the TCM Academy course on Ethical hacking, which was taking advantage of files that were either directly ran as root and I was capable of modifying. |
 | 2. | The value of a tty shell |
 | --- | --- |
