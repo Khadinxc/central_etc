@@ -4,6 +4,8 @@
 ### Difficulty: Easy
 ### Community Difficulty: Easy
 ### Description: Part 2 of Mid Year CTF machines.
+### Write up - Kaib3r
+### Completion date - 29/03/2024
 
 
 #### Introduction:
