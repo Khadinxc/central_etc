@@ -1,6 +1,6 @@
 # PG Play - Sar
-##Author: Love Sharma
-##Released on:Jul 20, 2020
+## Author: Love Sharma
+### Released on:Jul 20, 2020
 
 
 This is not a conventional foothold-privesc type of machine. Only proof.txt is a valid flag.
