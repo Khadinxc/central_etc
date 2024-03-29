@@ -4,6 +4,8 @@
 ### Difficulty: Easy
 ### Community Difficulty: Easy
 ### Description: This is not a conventional foothold-privesc type of machine. Only proof.txt is a valid flag.
+### Write up - Kaib3r
+### Completion date - 29/03/2024
 | Step: | Notes: |
 | --- | --- |
 | 1. | I ran a all ports nmap scan without a T4 switch to get started and ran another in parallel for speed with a T4 switch and of only common ports. |
