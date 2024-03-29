@@ -1,5 +1,5 @@
 # PG Play - Sar
-## Author: Love Sharma
+## Machine Author: Love Sharma
 ## Released on: Jul 20, 2020
 ### Difficulty: Easy
 ### Community Difficulty: Easy
