@@ -14,5 +14,4 @@ git clone https://github.com/Tib3rius/AutoRecon.git
 apt install -y docker.io
 systemctl enable docker --now
 go install github.com/tomnomnom/assetfinder@latest
-sh -c "$(wget -O- https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 pip3 install salt
