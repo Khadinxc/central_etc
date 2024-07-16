@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#start up script for kali/parrotOS boxes/ things to install on new install
+#Making a list of stuff to install when i make a fresh Kali box.
 
 cd /opt
 sudo su
