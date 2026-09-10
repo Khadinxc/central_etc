@@ -1,0 +1,89 @@
+let DetectionWindow = 30m;
+let TrainingWindow = 14d;
+let MinDistinctUris = 10;
+let DeviationMultiplier = 3.0;
+
+let FrontDoorData = materialize(
+    AzureDiagnostics
+    | where TimeGenerated between (ago(TrainingWindow) .. now())
+    | where Category == "FrontDoorAccessLog"
+    | where isnotempty(clientIp_s)
+        and isnotempty(requestUri_s)
+        and isnotempty(routingRuleName_s)
+    | project TimeGenerated, clientIp_s, routingRuleName_s, requestUri_s
+);
+
+// Establish each known IP's typical distinct URI count per 30-minute period.
+let IpBaseline =
+    FrontDoorData
+    | where TimeGenerated < ago(DetectionWindow)
+    | summarize DistinctUris = dcount(requestUri_s)
+        by clientIp_s,
+           routingRuleName_s,
+           TimeBin = bin(TimeGenerated, DetectionWindow)
+    | summarize
+        IpMedianDistinctUris = percentile(DistinctUris, 50),
+        IpP95DistinctUris = percentile(DistinctUris, 95),
+        TrainingPeriods = count()
+        by clientIp_s, routingRuleName_s;
+
+// Establish the "normal consumer" baseline for each routing rule.
+// This is used when an IP has never previously been observed.
+let RoutingRuleBaseline =
+    IpBaseline
+    | summarize
+        RoutingRuleMedianDistinctUris = percentile(IpMedianDistinctUris, 50)
+        by routingRuleName_s;
+
+// Measure current behaviour.
+FrontDoorData
+| where TimeGenerated >= ago(DetectionWindow)
+| summarize
+    CurrentRequests = count(),
+    CurrentDistinctUris = dcount(requestUri_s),
+    SampleUris = make_set(requestUri_s, 20),
+    FirstSeen = min(TimeGenerated),
+    LastSeen = max(TimeGenerated)
+    by clientIp_s, routingRuleName_s
+
+// Attach the IP-specific historical baseline where one exists.
+| join kind=leftouter IpBaseline
+    on clientIp_s, routingRuleName_s
+
+// Attach the routing-rule peer baseline for new IPs.
+| join kind=leftouter RoutingRuleBaseline
+    on routingRuleName_s
+
+// Known IP -> compare against its own history.
+// New IP   -> compare against median behaviour of other IPs on the route.
+| extend
+    IsNewIp = isempty(IpMedianDistinctUris),
+    BaselineDistinctUris = iff(
+        isempty(IpMedianDistinctUris),
+        RoutingRuleMedianDistinctUris,
+        IpMedianDistinctUris
+    )
+| extend
+    DeviationRatio = round(
+        todouble(CurrentDistinctUris) /
+        iif(BaselineDistinctUris < 1.0, 1.0, todouble(BaselineDistinctUris)),
+        2
+    )
+| where CurrentDistinctUris >= MinDistinctUris
+| where DeviationRatio >= DeviationMultiplier
+| project
+    clientIp_s,
+    routingRuleName_s,
+    IsNewIp,
+    CurrentRequests,
+    CurrentDistinctUris,
+    BaselineDistinctUris,
+    DeviationRatio,
+    IpMedianDistinctUris,
+    IpP95DistinctUris,
+    RoutingRuleMedianDistinctUris,
+    TrainingPeriods,
+    FirstSeen,
+    LastSeen,
+    SampleUris
+| order by DeviationRatio desc
