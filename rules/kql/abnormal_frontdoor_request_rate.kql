@@ -26,6 +26,13 @@ let FrontDoorData = materialize(
     | extend
         clientCountry = tostring(AdditionalFields["clientCountry"]),
         responseBytes = tolong(AdditionalFields["responseBytes"])
+    | extend NormalizedUri = replace_regex(
+    requestUri_s,
+        @"([?&])_rsc=[^&]*&?",
+        @"\1"
+        )
+    | extend NormalizedUri = replace_regex(NormalizedUri, @"[?&]$", @"")
+    | extend NormalizedUri = replace_regex(NormalizedUri, @"\?&", @"?")
     | project
         TimeGenerated,
         clientIp_s,
