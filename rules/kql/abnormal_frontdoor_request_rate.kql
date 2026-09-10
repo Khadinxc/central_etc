@@ -23,12 +23,17 @@ let FrontDoorData = materialize(
     | where clientIp_s !in (WhitelistedIps)
     | where routingRuleName_s !in (WhitelistedRoutingRules)
     | where not(requestUri_s matches regex StaticResourceRegex)
+    | extend
+        clientCountry = tostring(AdditionalFields["clientCountry"]),
+        responseBytes = tolong(AdditionalFields["responseBytes"])
     | project
         TimeGenerated,
         clientIp_s,
         routingRuleName_s,
         requestUri_s,
-        httpStatusCode_s
+        httpStatusCode_s,
+        clientCountry,
+        responseBytes
 );
 let HistoricalWindows =
     FrontDoorData
@@ -77,6 +82,12 @@ FrontDoorData
     Status500 = countif(httpStatusCode_s == "500"),
     Status502 = countif(httpStatusCode_s == "502"),
     Status503 = countif(httpStatusCode_s == "503"),
+    ClientCountries = make_set(clientCountry, 10),
+    MinResponseBytes = min(responseBytes),
+    MaxResponseBytes = max(responseBytes),
+    AvgResponseBytes = avg(responseBytes),
+    MedianResponseBytes = percentile(responseBytes, 50),
+    DistinctResponseSizes = dcount(responseBytes),
     SampleUris = make_set(requestUri_s, 20),
     FirstSeen = min(TimeGenerated),
     LastSeen = max(TimeGenerated)
@@ -85,7 +96,9 @@ FrontDoorData
         routingRuleName_s
 | extend
     UriBreadthRatio =
-        todouble(DistinctUris) / todouble(Requests)
+        todouble(DistinctUris) / todouble(Requests),
+    ResponseSizeDiversity =
+        todouble(DistinctResponseSizes) / todouble(Requests)
 | join kind=leftouter IpBaseline
     on clientIp_s, routingRuleName_s
 | join kind=leftouter RoutingRuleBaseline
@@ -126,6 +139,7 @@ FrontDoorData
 | where BreadthDeviation >= MinBreadthDeviation
 | project
     clientIp_s,
+    ClientCountries,
     routingRuleName_s,
     BaselineType,
     IsNewClient,
@@ -143,6 +157,12 @@ FrontDoorData
     Status500,
     Status502,
     Status503,
+    MinResponseBytes,
+    MaxResponseBytes,
+    AvgResponseBytes,
+    MedianResponseBytes,
+    DistinctResponseSizes,
+    ResponseSizeDiversity,
     UriBreadthRatio,
     ExpectedDistinctUris,
     DistinctUriDeviation,
