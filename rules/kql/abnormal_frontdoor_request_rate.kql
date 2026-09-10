@@ -5,7 +5,6 @@ let MinDistinctUris = 10;
 let MinDistinctUriDeviation = 3.0;
 let MinBreadthDeviation = 1.5;
 let StaticResourceRegex = @"(?i)\.(js|css|map|ico|png|jpg|jpeg|gif|svg|webp|woff|woff2|ttf|eot)(\?|$)";
-// Whitelists
 let WhitelistedIps = dynamic([
     "192.0.2.10",
     "198.51.100.20"
@@ -23,14 +22,14 @@ let FrontDoorData = materialize(
         and isnotempty(routingRuleName_s)
     | where clientIp_s !in (WhitelistedIps)
     | where routingRuleName_s !in (WhitelistedRoutingRules)
-    | where requestUri_s !matches regex StaticResourceRegex
+    | where not(requestUri_s matches regex StaticResourceRegex)
     | project
         TimeGenerated,
         clientIp_s,
         routingRuleName_s,
-        requestUri_s
+        requestUri_s,
+        httpStatusCode_s
 );
-// Historical behaviour represented as comparable 30-minute client windows.
 let HistoricalWindows =
     FrontDoorData
     | where TimeGenerated < ago(DetectionWindow)
@@ -44,7 +43,6 @@ let HistoricalWindows =
     | extend
         UriBreadthRatio =
             todouble(DistinctUris) / todouble(Requests);
-// Per-client historical baseline.
 let IpBaseline =
     HistoricalWindows
     | summarize
@@ -55,8 +53,6 @@ let IpBaseline =
         by
             clientIp_s,
             routingRuleName_s;
-// Peer baseline for the routing rule.
-// Used when the current IP has no historical baseline.
 let RoutingRuleBaseline =
     HistoricalWindows
     | summarize
@@ -64,12 +60,23 @@ let RoutingRuleBaseline =
         RouteP95DistinctUris = percentile(DistinctUris, 95),
         RouteMedianBreadthRatio = percentile(UriBreadthRatio, 50)
         by routingRuleName_s;
-// Current 30-minute behaviour.
 FrontDoorData
 | where TimeGenerated >= ago(DetectionWindow)
 | summarize
     Requests = count(),
     DistinctUris = dcount(requestUri_s),
+    Status200 = countif(httpStatusCode_s == "200"),
+    Status201 = countif(httpStatusCode_s == "201"),
+    Status204 = countif(httpStatusCode_s == "204"),
+    Status400 = countif(httpStatusCode_s == "400"),
+    Status401 = countif(httpStatusCode_s == "401"),
+    Status403 = countif(httpStatusCode_s == "403"),
+    Status404 = countif(httpStatusCode_s == "404"),
+    Status405 = countif(httpStatusCode_s == "405"),
+    Status429 = countif(httpStatusCode_s == "429"),
+    Status500 = countif(httpStatusCode_s == "500"),
+    Status502 = countif(httpStatusCode_s == "502"),
+    Status503 = countif(httpStatusCode_s == "503"),
     SampleUris = make_set(requestUri_s, 20),
     FirstSeen = min(TimeGenerated),
     LastSeen = max(TimeGenerated)
@@ -79,10 +86,8 @@ FrontDoorData
 | extend
     UriBreadthRatio =
         todouble(DistinctUris) / todouble(Requests)
-// Attach the client's own baseline.
 | join kind=leftouter IpBaseline
     on clientIp_s, routingRuleName_s
-// Attach routing-rule peer behaviour for cold-start clients.
 | join kind=leftouter RoutingRuleBaseline
     on routingRuleName_s
 | extend
@@ -115,10 +120,8 @@ FrontDoorData
             0.01,
             ExpectedBreadthRatio
         )
-// Minimum activity floor prevents tiny samples becoming mathematically anomalous.
 | where Requests >= MinRequests
 | where DistinctUris >= MinDistinctUris
-// Require both unusual URI breadth and unusual URI-per-request behaviour.
 | where DistinctUriDeviation >= MinDistinctUriDeviation
 | where BreadthDeviation >= MinBreadthDeviation
 | project
@@ -128,6 +131,18 @@ FrontDoorData
     IsNewClient,
     Requests,
     DistinctUris,
+    Status200,
+    Status201,
+    Status204,
+    Status400,
+    Status401,
+    Status403,
+    Status404,
+    Status405,
+    Status429,
+    Status500,
+    Status502,
+    Status503,
     UriBreadthRatio,
     ExpectedDistinctUris,
     DistinctUriDeviation,
