@@ -122,10 +122,10 @@ let HistoricalWindows = materialize(
 );
 let IpBaseline =
     HistoricalWindows
-    | where (clientIp_s, routingRuleName_s) in (
+    | join kind=inner (
         CandidateClients
         | project clientIp_s, routingRuleName_s
-    )
+    ) on clientIp_s, routingRuleName_s
     | summarize
         MedianDistinctUris = percentile(DistinctUris, 50),
         P95DistinctUris = percentile(DistinctUris, 95),
