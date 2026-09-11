@@ -4,7 +4,7 @@ let MinRequests = 20;
 let MinDistinctUris = 10;
 let MinDistinctUriDeviation = 3.0;
 let MinBreadthDeviation = 1.5;
-let StaticResourceRegex = @"(?i)\.(js|css|map|ico|png|jpg|jpeg|gif|svg|webp|woff|woff2|ttf|eot)(\?|$)";
+let StaticResourceRegex = @"(?i)(\.(js|css|map|ico|png|jpg|jpeg|gif|svg|webp|woff|woff2|ttf|eot)(\?|$)|[?&_]_rsc=)";
 let WhitelistedIps = dynamic([
     "192.0.2.10",
     "198.51.100.20"
@@ -26,13 +26,6 @@ let FrontDoorData = materialize(
     | extend
         clientCountry = tostring(AdditionalFields["clientCountry"]),
         responseBytes = tolong(AdditionalFields["responseBytes"])
-    | extend NormalizedUri = replace_regex(
-    requestUri_s,
-        @"([?&])_rsc=[^&]*&?",
-        @"\1"
-        )
-    | extend NormalizedUri = replace_regex(NormalizedUri, @"[?&]$", @"")
-    | extend NormalizedUri = replace_regex(NormalizedUri, @"\?&", @"?")
     | project
         TimeGenerated,
         clientIp_s,
@@ -72,40 +65,49 @@ let RoutingRuleBaseline =
         RouteP95DistinctUris = percentile(DistinctUris, 95),
         RouteMedianBreadthRatio = percentile(UriBreadthRatio, 50)
         by routingRuleName_s;
-FrontDoorData
-| where TimeGenerated >= ago(DetectionWindow)
-| summarize
-    Requests = count(),
-    DistinctUris = dcount(requestUri_s),
-    Status200 = countif(httpStatusCode_s == "200"),
-    Status201 = countif(httpStatusCode_s == "201"),
-    Status204 = countif(httpStatusCode_s == "204"),
-    Status400 = countif(httpStatusCode_s == "400"),
-    Status401 = countif(httpStatusCode_s == "401"),
-    Status403 = countif(httpStatusCode_s == "403"),
-    Status404 = countif(httpStatusCode_s == "404"),
-    Status405 = countif(httpStatusCode_s == "405"),
-    Status429 = countif(httpStatusCode_s == "429"),
-    Status500 = countif(httpStatusCode_s == "500"),
-    Status502 = countif(httpStatusCode_s == "502"),
-    Status503 = countif(httpStatusCode_s == "503"),
-    ClientCountries = make_set(clientCountry, 10),
-    MinResponseBytes = min(responseBytes),
-    MaxResponseBytes = max(responseBytes),
-    AvgResponseBytes = avg(responseBytes),
-    MedianResponseBytes = percentile(responseBytes, 50),
-    DistinctResponseSizes = dcount(responseBytes),
-    SampleUris = make_set(requestUri_s, 20),
-    FirstSeen = min(TimeGenerated),
-    LastSeen = max(TimeGenerated)
-    by
-        clientIp_s,
-        routingRuleName_s
-| extend
-    UriBreadthRatio =
-        todouble(DistinctUris) / todouble(Requests),
-    ResponseSizeDiversity =
-        todouble(DistinctResponseSizes) / todouble(Requests)
+let CurrentStatusCodes =
+    FrontDoorData
+    | where TimeGenerated >= ago(DetectionWindow)
+    | where isnotempty(httpStatusCode_s)
+    | summarize
+        StatusCount = count()
+        by
+            clientIp_s,
+            routingRuleName_s,
+            httpStatusCode_s
+    | summarize
+        StatusCodes = make_bag(
+            bag_pack(httpStatusCode_s, StatusCount)
+        )
+        by
+            clientIp_s,
+            routingRuleName_s;
+let CurrentActivity =
+    FrontDoorData
+    | where TimeGenerated >= ago(DetectionWindow)
+    | summarize
+        Requests = count(),
+        DistinctUris = dcount(requestUri_s),
+        ClientCountries = make_set(clientCountry, 10),
+        MinResponseBytes = min(responseBytes),
+        MaxResponseBytes = max(responseBytes),
+        AvgResponseBytes = avg(responseBytes),
+        MedianResponseBytes = percentile(responseBytes, 50),
+        DistinctResponseSizes = dcount(responseBytes),
+        SampleUris = make_set(requestUri_s, 20),
+        FirstSeen = min(TimeGenerated),
+        LastSeen = max(TimeGenerated)
+        by
+            clientIp_s,
+            routingRuleName_s
+    | extend
+        UriBreadthRatio =
+            todouble(DistinctUris) / todouble(Requests),
+        ResponseSizeDiversity =
+            todouble(DistinctResponseSizes) / todouble(Requests);
+CurrentActivity
+| join kind=leftouter CurrentStatusCodes
+    on clientIp_s, routingRuleName_s
 | join kind=leftouter IpBaseline
     on clientIp_s, routingRuleName_s
 | join kind=leftouter RoutingRuleBaseline
@@ -152,18 +154,7 @@ FrontDoorData
     IsNewClient,
     Requests,
     DistinctUris,
-    Status200,
-    Status201,
-    Status204,
-    Status400,
-    Status401,
-    Status403,
-    Status404,
-    Status405,
-    Status429,
-    Status500,
-    Status502,
-    Status503,
+    StatusCodes,
     MinResponseBytes,
     MaxResponseBytes,
     AvgResponseBytes,
