@@ -39,7 +39,7 @@ let CurrentRaw = materialize(
 );
 let CandidateClients = materialize(
     CurrentRaw
-    | summarize
+    | summarize hint.strategy=shuffle
         PreFilterRequests = count(),
         PreFilterDistinctUris = dcount(requestUri_s, 0)
         by
@@ -54,7 +54,7 @@ let CandidateClients = materialize(
 let CandidateRoutingRules =
     CandidateClients
     | summarize by routingRuleName_s;
-let HistoricalData = materialize(
+let HistoricalWindows = materialize(
     AzureDiagnostics
     | where TimeGenerated >= ago(TrainingWindow)
         and TimeGenerated < ago(DetectionWindow)
@@ -98,13 +98,10 @@ let HistoricalData = materialize(
         @"([?&][^=&#]+)=([^&#]*)",
         @"\1={value}"
     )
-);
-let HistoricalWindows = materialize(
-    HistoricalData
-    | summarize
+    | summarize hint.strategy=shuffle
         Requests = count(),
-        DistinctUris = dcount(requestUri_s),
-        DistinctUriStructures = dcount(UriStructure)
+        DistinctUris = dcount(requestUri_s, 0),
+        DistinctUriStructures = dcount(UriStructure, 0)
         by
             clientIp_s,
             routingRuleName_s,
@@ -122,16 +119,14 @@ let HistoricalWindows = materialize(
 );
 let IpBaseline =
     HistoricalWindows
-    | join kind=inner (
+    | join kind=leftsemi (
         CandidateClients
         | project clientIp_s, routingRuleName_s
     ) on clientIp_s, routingRuleName_s
-    | summarize
+    | summarize hint.strategy=shuffle
         MedianDistinctUris = percentile(DistinctUris, 50),
-        P95DistinctUris = percentile(DistinctUris, 95),
         MedianBreadthRatio = percentile(UriBreadthRatio, 50),
         MedianUrisPerStructure = percentile(UrisPerStructure, 50),
-        P95UrisPerStructure = percentile(UrisPerStructure, 95),
         TrainingWindows = count()
         by
             clientIp_s,
@@ -140,15 +135,14 @@ let RoutingRuleBaseline =
     HistoricalWindows
     | summarize
         RouteMedianDistinctUris = percentile(DistinctUris, 50),
-        RouteP95DistinctUris = percentile(DistinctUris, 95),
         RouteMedianBreadthRatio = percentile(UriBreadthRatio, 50),
-        RouteMedianUrisPerStructure = percentile(UrisPerStructure, 50),
-        RouteP95UrisPerStructure = percentile(UrisPerStructure, 95)
+        RouteMedianUrisPerStructure = percentile(UrisPerStructure, 50)
         by routingRuleName_s;
 let CurrentData = materialize(
     CurrentRaw
-    | join kind=inner CandidateClients
-        on clientIp_s, routingRuleName_s
+    | join kind=inner (
+        CandidateClients
+    ) on clientIp_s, routingRuleName_s
     | project-away clientIp_s1, routingRuleName_s1
     | extend
         clientCountry = tostring(AdditionalFields["clientCountry"]),
@@ -200,7 +194,7 @@ let CurrentStatusCodes =
             routingRuleName_s;
 let CurrentActivity =
     CurrentData
-    | summarize
+    | summarize hint.strategy=shuffle
         Requests = count(),
         DistinctUris = dcount(requestUri_s),
         DistinctUriStructures = dcount(UriStructure),
@@ -305,13 +299,9 @@ CurrentActivity
     ExpectedBreadthRatio,
     BreadthDeviation,
     MedianDistinctUris,
-    P95DistinctUris,
     MedianUrisPerStructure,
-    P95UrisPerStructure,
     RouteMedianDistinctUris,
-    RouteP95DistinctUris,
     RouteMedianUrisPerStructure,
-    RouteP95UrisPerStructure,
     TrainingWindows,
     FirstSeen,
     LastSeen,
