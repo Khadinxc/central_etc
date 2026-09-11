@@ -4,10 +4,10 @@ let MinRequests = 20;
 let MinDistinctUris = 10;
 let MinDistinctUriDeviation = 3.0;
 let MinBreadthDeviation = 1.5;
-let StaticResourceRegex = @"(?i)(\.(js|css|map|ico|png|jpg|jpeg|gif|svg|webp|woff|woff2|ttf|eot)(\?|$)|[?&_]_rsc=)";
+let StaticResourceRegex = @"(?i)(\.(js|css|map|ico|png|jpg|jpeg|gif|svg|webp|woff|woff2|ttf|eot)(\?|$)|[?&]_rsc=)";
 let StatusCodeFilters = dynamic([
-    "403",
-    "429"
+    403,
+    429
 ]);
 let WhitelistedIps = dynamic([
     "192.0.2.10",
@@ -26,16 +26,27 @@ let FrontDoorData = materialize(
         and isnotempty(routingRuleName_s)
     | where clientIp_s !in (WhitelistedIps)
     | where routingRuleName_s !in (WhitelistedRoutingRules)
-    | where not(httpStatusCode_d in (StatusCodeFilters))
+    | where not(toint(httpStatusCode_d) in (StatusCodeFilters))
     | where not(requestUri_s matches regex StaticResourceRegex)
     | extend
         clientCountry = tostring(AdditionalFields["clientCountry"]),
         responseBytes = tolong(AdditionalFields["responseBytes"])
+    | extend
+        NormalizedRequestUri = iff(
+            requestUri_s contains "/_next/data/",
+            replace_regex(
+                requestUri_s,
+                @"/_next/data/[^/]+/",
+                "/_next/data/"
+            ),
+            requestUri_s
+        )
     | project
         TimeGenerated,
         clientIp_s,
         routingRuleName_s,
         requestUri_s,
+        NormalizedRequestUri,
         httpStatusCode_d,
         clientCountry,
         responseBytes
@@ -45,7 +56,7 @@ let HistoricalWindows =
     | where TimeGenerated < ago(DetectionWindow)
     | summarize
         Requests = count(),
-        DistinctUris = dcount(requestUri_s)
+        DistinctUris = dcount(NormalizedRequestUri)
         by
             clientIp_s,
             routingRuleName_s,
@@ -93,7 +104,7 @@ let CurrentActivity =
     | where TimeGenerated >= ago(DetectionWindow)
     | summarize
         Requests = count(),
-        DistinctUris = dcount(requestUri_s),
+        DistinctUris = dcount(NormalizedRequestUri),
         ClientCountries = make_set(clientCountry, 10),
         MinResponseBytes = min(responseBytes),
         MaxResponseBytes = max(responseBytes),
