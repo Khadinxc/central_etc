@@ -4,10 +4,11 @@ let MinRequests = 20;
 let MinDistinctUris = 10;
 let MinDistinctUriDeviation = 3.0;
 let MinBreadthDeviation = 1.5;
-let StaticResourceRegex = @"(?i)(\.(js|css|map|ico|png|jpg|jpeg|gif|svg|webp|woff|woff2|ttf|eot)(\?|$)|[?&_]_rsc=)";
+let MinStructureDeviation = 2.0;
+let StaticResourceRegex = @"(?i)(\.(js|css|map|ico|png|jpg|jpeg|gif|svg|webp|woff|woff2|ttf|eot)(\?|$)|[?&]_rsc=)";
 let StatusCodeFilters = dynamic([
-    "403",
-    "429"
+    403,
+    429
 ]);
 let WhitelistedIps = dynamic([
     "192.0.2.10",
@@ -26,16 +27,50 @@ let FrontDoorData = materialize(
         and isnotempty(routingRuleName_s)
     | where clientIp_s !in (WhitelistedIps)
     | where routingRuleName_s !in (WhitelistedRoutingRules)
-    | where not(httpStatusCode_d in (StatusCodeFilters))
+    | where not(toint(httpStatusCode_d) in (StatusCodeFilters))
     | where not(requestUri_s matches regex StaticResourceRegex)
     | extend
         clientCountry = tostring(AdditionalFields["clientCountry"]),
         responseBytes = tolong(AdditionalFields["responseBytes"])
+    // Generate a technology-agnostic URI structure.
+    // Preserve route names and parameter names while replacing likely identifiers.
+    | extend UriStructure = requestUri_s
+    // UUID/GUID values.
+    | extend UriStructure = replace_regex(
+        UriStructure,
+        @"(?i)[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+        "{uuid}"
+    )
+    // Long hexadecimal identifiers/hashes.
+    | extend UriStructure = replace_regex(
+        UriStructure,
+        @"(?i)\b[0-9a-f]{16,}\b",
+        "{hex}"
+    )
+    // Long opaque alphanumeric path segments such as build IDs, tokens and hashes.
+    | extend UriStructure = replace_regex(
+        UriStructure,
+        @"/[A-Za-z0-9_-]{16,}(?=/)",
+        "/{opaque}"
+    )
+    // Numeric identifiers in paths and filenames.
+    | extend UriStructure = replace_regex(
+        UriStructure,
+        @"\b\d+\b",
+        "{id}"
+    )
+    // Preserve query parameter names but replace their values.
+    | extend UriStructure = replace_regex(
+        UriStructure,
+        @"([?&][^=&#]+)=([^&#]*)",
+        @"\1={value}"
+    )
     | project
         TimeGenerated,
         clientIp_s,
         routingRuleName_s,
         requestUri_s,
+        UriStructure,
         httpStatusCode_d,
         clientCountry,
         responseBytes
@@ -45,20 +80,30 @@ let HistoricalWindows =
     | where TimeGenerated < ago(DetectionWindow)
     | summarize
         Requests = count(),
-        DistinctUris = dcount(requestUri_s)
+        DistinctUris = dcount(requestUri_s),
+        DistinctUriStructures = dcount(UriStructure)
         by
             clientIp_s,
             routingRuleName_s,
             TimeBin = bin(TimeGenerated, DetectionWindow)
     | extend
         UriBreadthRatio =
-            todouble(DistinctUris) / todouble(Requests);
+            todouble(DistinctUris) / todouble(Requests),
+        UrisPerStructure =
+            todouble(DistinctUris)
+            / iif(
+                DistinctUriStructures < 1,
+                1.0,
+                todouble(DistinctUriStructures)
+            );
 let IpBaseline =
     HistoricalWindows
     | summarize
         MedianDistinctUris = percentile(DistinctUris, 50),
         P95DistinctUris = percentile(DistinctUris, 95),
         MedianBreadthRatio = percentile(UriBreadthRatio, 50),
+        MedianUrisPerStructure = percentile(UrisPerStructure, 50),
+        P95UrisPerStructure = percentile(UrisPerStructure, 95),
         TrainingWindows = count()
         by
             clientIp_s,
@@ -68,7 +113,9 @@ let RoutingRuleBaseline =
     | summarize
         RouteMedianDistinctUris = percentile(DistinctUris, 50),
         RouteP95DistinctUris = percentile(DistinctUris, 95),
-        RouteMedianBreadthRatio = percentile(UriBreadthRatio, 50)
+        RouteMedianBreadthRatio = percentile(UriBreadthRatio, 50),
+        RouteMedianUrisPerStructure = percentile(UrisPerStructure, 50),
+        RouteP95UrisPerStructure = percentile(UrisPerStructure, 95)
         by routingRuleName_s;
 let CurrentStatusCodes =
     FrontDoorData
@@ -94,6 +141,7 @@ let CurrentActivity =
     | summarize
         Requests = count(),
         DistinctUris = dcount(requestUri_s),
+        DistinctUriStructures = dcount(UriStructure),
         ClientCountries = make_set(clientCountry, 10),
         MinResponseBytes = min(responseBytes),
         MaxResponseBytes = max(responseBytes),
@@ -101,6 +149,7 @@ let CurrentActivity =
         MedianResponseBytes = percentile(responseBytes, 50),
         DistinctResponseSizes = dcount(responseBytes),
         SampleUris = make_set(requestUri_s, 20),
+        SampleUriStructures = make_set(UriStructure, 20),
         FirstSeen = min(TimeGenerated),
         LastSeen = max(TimeGenerated)
         by
@@ -109,6 +158,13 @@ let CurrentActivity =
     | extend
         UriBreadthRatio =
             todouble(DistinctUris) / todouble(Requests),
+        UrisPerStructure =
+            todouble(DistinctUris)
+            / iif(
+                DistinctUriStructures < 1,
+                1.0,
+                todouble(DistinctUriStructures)
+            ),
         ResponseSizeDiversity =
             todouble(DistinctResponseSizes) / todouble(Requests);
 CurrentActivity
@@ -127,6 +183,10 @@ CurrentActivity
     ExpectedBreadthRatio = coalesce(
         MedianBreadthRatio,
         RouteMedianBreadthRatio
+    ),
+    ExpectedUrisPerStructure = coalesce(
+        MedianUrisPerStructure,
+        RouteMedianUrisPerStructure
     ),
     BaselineType = iff(
         isempty(MedianDistinctUris),
@@ -147,11 +207,19 @@ CurrentActivity
             ExpectedBreadthRatio <= 0,
             0.01,
             ExpectedBreadthRatio
+        ),
+    StructureDeviation =
+        UrisPerStructure
+        / iif(
+            ExpectedUrisPerStructure <= 0,
+            1.0,
+            ExpectedUrisPerStructure
         )
 | where Requests >= MinRequests
 | where DistinctUris >= MinDistinctUris
 | where DistinctUriDeviation >= MinDistinctUriDeviation
 | where BreadthDeviation >= MinBreadthDeviation
+| where StructureDeviation >= MinStructureDeviation
 | project
     clientIp_s,
     ClientCountries,
@@ -160,6 +228,10 @@ CurrentActivity
     IsNewClient,
     Requests,
     DistinctUris,
+    DistinctUriStructures,
+    UrisPerStructure,
+    ExpectedUrisPerStructure,
+    StructureDeviation,
     StatusCodes,
     MinResponseBytes,
     MaxResponseBytes,
@@ -174,10 +246,15 @@ CurrentActivity
     BreadthDeviation,
     MedianDistinctUris,
     P95DistinctUris,
+    MedianUrisPerStructure,
+    P95UrisPerStructure,
     RouteMedianDistinctUris,
     RouteP95DistinctUris,
+    RouteMedianUrisPerStructure,
+    RouteP95UrisPerStructure,
     TrainingWindows,
     FirstSeen,
     LastSeen,
-    SampleUris
-| order by DistinctUriDeviation desc
+    SampleUris,
+    SampleUriStructures
+| order by StructureDeviation desc, DistinctUriDeviation desc
