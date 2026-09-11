@@ -5,6 +5,10 @@ let MinDistinctUris = 10;
 let MinDistinctUriDeviation = 3.0;
 let MinBreadthDeviation = 1.5;
 let StaticResourceRegex = @"(?i)(\.(js|css|map|ico|png|jpg|jpeg|gif|svg|webp|woff|woff2|ttf|eot)(\?|$)|[?&_]_rsc=)";
+let StatusCodeFilters = dynamic([
+    "403",
+    "429"
+]);
 let WhitelistedIps = dynamic([
     "192.0.2.10",
     "198.51.100.20"
@@ -22,6 +26,7 @@ let FrontDoorData = materialize(
         and isnotempty(routingRuleName_s)
     | where clientIp_s !in (WhitelistedIps)
     | where routingRuleName_s !in (WhitelistedRoutingRules)
+    | where not(httpStatusCode_d in (StatusCodeFilters))
     | where not(requestUri_s matches regex StaticResourceRegex)
     | extend
         clientCountry = tostring(AdditionalFields["clientCountry"]),
@@ -31,7 +36,7 @@ let FrontDoorData = materialize(
         clientIp_s,
         routingRuleName_s,
         requestUri_s,
-        httpStatusCode_s,
+        httpStatusCode_d,
         clientCountry,
         responseBytes
 );
@@ -68,16 +73,17 @@ let RoutingRuleBaseline =
 let CurrentStatusCodes =
     FrontDoorData
     | where TimeGenerated >= ago(DetectionWindow)
-    | where isnotempty(httpStatusCode_s)
+    | where isnotempty(httpStatusCode_d)
     | summarize
         StatusCount = count()
         by
             clientIp_s,
             routingRuleName_s,
-            httpStatusCode_s
+            httpStatusCode_d
+    | extend StatusCodeKey = tostring(toint(httpStatusCode_d))
     | summarize
         StatusCodes = make_bag(
-            bag_pack(httpStatusCode_s, StatusCount)
+            bag_pack(StatusCodeKey, StatusCount)
         )
         by
             clientIp_s,
