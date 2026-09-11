@@ -7,8 +7,8 @@ let MinBreadthDeviation = 1.5;
 let MinStructureDeviation = 2.0;
 let StaticResourceRegex = @"(?i)(\.(js|css|map|ico|png|jpg|jpeg|gif|svg|webp|woff|woff2|ttf|eot)(\?|$)|[?&]_rsc=)";
 let StatusCodeFilters = dynamic([
-    403,
-    429
+    403.0,
+    429.0
 ]);
 let WhitelistedIps = dynamic([
     "192.0.2.10",
@@ -18,20 +18,60 @@ let WhitelistedRoutingRules = dynamic([
     "HealthCheckRoute",
     "KnownAutomationRoute"
 ]);
-let FrontDoorData = materialize(
+let CurrentRaw = materialize(
     AzureDiagnostics
-    | where TimeGenerated >= ago(TrainingWindow)
+    | where TimeGenerated >= ago(DetectionWindow)
     | where Category == "FrontDoorAccessLog"
     | where isnotempty(clientIp_s)
         and isnotempty(requestUri_s)
         and isnotempty(routingRuleName_s)
     | where clientIp_s !in (WhitelistedIps)
     | where routingRuleName_s !in (WhitelistedRoutingRules)
-    | where not(toint(httpStatusCode_d) in (StatusCodeFilters))
+    | where httpStatusCode_d !in (StatusCodeFilters)
     | where not(requestUri_s matches regex StaticResourceRegex)
-    | extend
-        clientCountry = tostring(AdditionalFields["clientCountry"]),
-        responseBytes = tolong(AdditionalFields["responseBytes"])
+    | project
+        TimeGenerated,
+        clientIp_s,
+        routingRuleName_s,
+        requestUri_s,
+        httpStatusCode_d,
+        AdditionalFields
+);
+let CandidateClients = materialize(
+    CurrentRaw
+    | summarize
+        PreFilterRequests = count(),
+        PreFilterDistinctUris = dcount(requestUri_s, 0)
+        by
+            clientIp_s,
+            routingRuleName_s
+    | where PreFilterRequests >= MinRequests
+    | where PreFilterDistinctUris >= MinDistinctUris
+    | project
+        clientIp_s,
+        routingRuleName_s
+);
+let CandidateRoutingRules =
+    CandidateClients
+    | summarize by routingRuleName_s;
+let HistoricalData = materialize(
+    AzureDiagnostics
+    | where TimeGenerated >= ago(TrainingWindow)
+        and TimeGenerated < ago(DetectionWindow)
+    | where Category == "FrontDoorAccessLog"
+    | where isnotempty(clientIp_s)
+        and isnotempty(requestUri_s)
+        and isnotempty(routingRuleName_s)
+    | where routingRuleName_s in (CandidateRoutingRules)
+    | where clientIp_s !in (WhitelistedIps)
+    | where routingRuleName_s !in (WhitelistedRoutingRules)
+    | where httpStatusCode_d !in (StatusCodeFilters)
+    | where not(requestUri_s matches regex StaticResourceRegex)
+    | project
+        TimeGenerated,
+        clientIp_s,
+        routingRuleName_s,
+        requestUri_s
     | extend UriStructure = requestUri_s
     | extend UriStructure = replace_regex(
         UriStructure,
@@ -58,19 +98,9 @@ let FrontDoorData = materialize(
         @"([?&][^=&#]+)=([^&#]*)",
         @"\1={value}"
     )
-    | project
-        TimeGenerated,
-        clientIp_s,
-        routingRuleName_s,
-        requestUri_s,
-        UriStructure,
-        httpStatusCode_d,
-        clientCountry,
-        responseBytes
 );
-let HistoricalWindows =
-    FrontDoorData
-    | where TimeGenerated < ago(DetectionWindow)
+let HistoricalWindows = materialize(
+    HistoricalData
     | summarize
         Requests = count(),
         DistinctUris = dcount(requestUri_s),
@@ -88,9 +118,14 @@ let HistoricalWindows =
                 DistinctUriStructures < 1,
                 1.0,
                 todouble(DistinctUriStructures)
-            );
+            )
+);
 let IpBaseline =
     HistoricalWindows
+    | where (clientIp_s, routingRuleName_s) in (
+        CandidateClients
+        | project clientIp_s, routingRuleName_s
+    )
     | summarize
         MedianDistinctUris = percentile(DistinctUris, 50),
         P95DistinctUris = percentile(DistinctUris, 95),
@@ -110,9 +145,44 @@ let RoutingRuleBaseline =
         RouteMedianUrisPerStructure = percentile(UrisPerStructure, 50),
         RouteP95UrisPerStructure = percentile(UrisPerStructure, 95)
         by routingRuleName_s;
+let CurrentData = materialize(
+    CurrentRaw
+    | join kind=inner CandidateClients
+        on clientIp_s, routingRuleName_s
+    | project-away clientIp_s1, routingRuleName_s1
+    | extend
+        clientCountry = tostring(AdditionalFields["clientCountry"]),
+        responseBytes = tolong(AdditionalFields["responseBytes"])
+    | project-away AdditionalFields
+    | extend UriStructure = requestUri_s
+    | extend UriStructure = replace_regex(
+        UriStructure,
+        @"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}",
+        "{uuid}"
+    )
+    | extend UriStructure = replace_regex(
+        UriStructure,
+        @"[0-9A-Fa-f]{16,}",
+        "{hex}"
+    )
+    | extend UriStructure = replace_regex(
+        UriStructure,
+        @"/[A-Za-z0-9_-]{16,}/",
+        "/{opaque}/"
+    )
+    | extend UriStructure = replace_regex(
+        UriStructure,
+        @"[0-9]+",
+        "{id}"
+    )
+    | extend UriStructure = replace_regex(
+        UriStructure,
+        @"([?&][^=&#]+)=([^&#]*)",
+        @"\1={value}"
+    )
+);
 let CurrentStatusCodes =
-    FrontDoorData
-    | where TimeGenerated >= ago(DetectionWindow)
+    CurrentData
     | where isnotempty(httpStatusCode_d)
     | summarize
         StatusCount = count()
@@ -129,8 +199,7 @@ let CurrentStatusCodes =
             clientIp_s,
             routingRuleName_s;
 let CurrentActivity =
-    FrontDoorData
-    | where TimeGenerated >= ago(DetectionWindow)
+    CurrentData
     | summarize
         Requests = count(),
         DistinctUris = dcount(requestUri_s),
@@ -208,8 +277,6 @@ CurrentActivity
             1.0,
             ExpectedUrisPerStructure
         )
-| where Requests >= MinRequests
-| where DistinctUris >= MinDistinctUris
 | where DistinctUriDeviation >= MinDistinctUriDeviation
 | where BreadthDeviation >= MinBreadthDeviation
 | where StructureDeviation >= MinStructureDeviation
