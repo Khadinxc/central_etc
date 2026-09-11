@@ -32,34 +32,27 @@ let FrontDoorData = materialize(
     | extend
         clientCountry = tostring(AdditionalFields["clientCountry"]),
         responseBytes = tolong(AdditionalFields["responseBytes"])
-    // Generate a technology-agnostic URI structure.
-    // Preserve route names and parameter names while replacing likely identifiers.
     | extend UriStructure = requestUri_s
-    // UUID/GUID values.
     | extend UriStructure = replace_regex(
         UriStructure,
-        @"(?i)[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+        @"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}",
         "{uuid}"
     )
-    // Long hexadecimal identifiers/hashes.
     | extend UriStructure = replace_regex(
         UriStructure,
-        @"(?i)\b[0-9a-f]{16,}\b",
+        @"[0-9A-Fa-f]{16,}",
         "{hex}"
     )
-    // Long opaque alphanumeric path segments such as build IDs, tokens and hashes.
     | extend UriStructure = replace_regex(
         UriStructure,
-        @"/[A-Za-z0-9_-]{16,}(?=/)",
-        "/{opaque}"
+        @"/[A-Za-z0-9_-]{16,}/",
+        "/{opaque}/"
     )
-    // Numeric identifiers in paths and filenames.
     | extend UriStructure = replace_regex(
         UriStructure,
-        @"\b\d+\b",
+        @"[0-9]+",
         "{id}"
     )
-    // Preserve query parameter names but replace their values.
     | extend UriStructure = replace_regex(
         UriStructure,
         @"([?&][^=&#]+)=([^&#]*)",
