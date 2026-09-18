@@ -1,0 +1,262 @@
+let SecurityControlOperations = dynamic([
+    //
+    // Azure Front Door / CDN security policy
+    //
+    "MICROSOFT.CDN/PROFILES/SECURITYPOLICIES/DELETE",
+    "MICROSOFT.CDN/PROFILES/SECURITYPOLICIES/WRITE",
+
+    //
+    // Front Door WAF
+    //
+    "MICROSOFT.NETWORK/FRONTDOORWEBAPPLICATIONFIREWALLPOLICIES/DELETE",
+    "MICROSOFT.NETWORK/FRONTDOORWEBAPPLICATIONFIREWALLPOLICIES/WRITE",
+
+    //
+    // Application Gateway WAF
+    //
+    "MICROSOFT.NETWORK/APPLICATIONGATEWAYWEBAPPLICATIONFIREWALLPOLICIES/DELETE",
+    "MICROSOFT.NETWORK/APPLICATIONGATEWAYWEBAPPLICATIONFIREWALLPOLICIES/WRITE",
+
+    //
+    // Network Security Groups
+    //
+    "MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/DELETE",
+    "MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/WRITE",
+    "MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/SECURITYRULES/DELETE",
+    "MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/SECURITYRULES/WRITE",
+
+    //
+    // Azure Firewall
+    //
+    "MICROSOFT.NETWORK/AZUREFIREWALLS/DELETE",
+    "MICROSOFT.NETWORK/AZUREFIREWALLS/WRITE",
+    "MICROSOFT.NETWORK/FIREWALLPOLICIES/DELETE",
+    "MICROSOFT.NETWORK/FIREWALLPOLICIES/WRITE",
+    "MICROSOFT.NETWORK/FIREWALLPOLICIES/RULEGROUPS/DELETE",
+    "MICROSOFT.NETWORK/FIREWALLPOLICIES/RULEGROUPS/WRITE",
+    "MICROSOFT.NETWORK/FIREWALLPOLICIES/RULECOLLECTIONGROUPS/DELETE",
+    "MICROSOFT.NETWORK/FIREWALLPOLICIES/RULECOLLECTIONGROUPS/WRITE",
+
+    //
+    // DDoS protection
+    //
+    "MICROSOFT.NETWORK/DDOSPROTECTIONPLANS/DELETE",
+    "MICROSOFT.NETWORK/DDOSPROTECTIONPLANS/WRITE",
+    "MICROSOFT.NETWORK/DDOSCUSTOMPOLICIES/DELETE",
+    "MICROSOFT.NETWORK/DDOSCUSTOMPOLICIES/WRITE",
+
+    //
+    // Azure Policy
+    //
+    "MICROSOFT.AUTHORIZATION/POLICYASSIGNMENTS/DELETE",
+    "MICROSOFT.AUTHORIZATION/POLICYASSIGNMENTS/WRITE",
+    "MICROSOFT.AUTHORIZATION/POLICYEXEMPTIONS/DELETE",
+    "MICROSOFT.AUTHORIZATION/POLICYEXEMPTIONS/WRITE",
+
+    //
+    // Azure Monitor / telemetry
+    //
+    "MICROSOFT.INSIGHTS/DIAGNOSTICSETTINGS/DELETE",
+    "MICROSOFT.INSIGHTS/DIAGNOSTICSETTINGS/WRITE",
+    "MICROSOFT.INSIGHTS/EXTENDEDDIAGNOSTICSETTINGS/DELETE",
+    "MICROSOFT.INSIGHTS/EXTENDEDDIAGNOSTICSETTINGS/WRITE",
+    "MICROSOFT.INSIGHTS/DATACOLLECTIONRULEASSOCIATIONS/DELETE",
+    "MICROSOFT.INSIGHTS/DATACOLLECTIONRULEASSOCIATIONS/WRITE",
+    "MICROSOFT.INSIGHTS/DATACOLLECTIONRULES/DELETE",
+    "MICROSOFT.INSIGHTS/DATACOLLECTIONRULES/WRITE",
+    "MICROSOFT.INSIGHTS/LOGPROFILES/DELETE",
+    "MICROSOFT.INSIGHTS/LOGPROFILES/WRITE",
+
+    //
+    // Microsoft Defender for Cloud
+    //
+    "MICROSOFT.SECURITY/PRICINGS/DELETE",
+    "MICROSOFT.SECURITY/PRICINGS/WRITE",
+    "MICROSOFT.SECURITY/SETTINGS/WRITE",
+    "MICROSOFT.SECURITY/POLICIES/WRITE",
+    "MICROSOFT.SECURITY/STANDARDASSIGNMENTS/DELETE",
+    "MICROSOFT.SECURITY/STANDARDASSIGNMENTS/WRITE",
+    "MICROSOFT.SECURITY/SECURITYSTANDARDS/DELETE",
+    "MICROSOFT.SECURITY/SECURITYSTANDARDS/WRITE",
+    "MICROSOFT.SECURITY/STANDARDS/DELETE",
+    "MICROSOFT.SECURITY/STANDARDS/WRITE",
+
+    //
+    // Microsoft Sentinel
+    //
+    "MICROSOFT.SECURITYINSIGHTS/ONBOARDINGSTATES/DELETE",
+    "MICROSOFT.SECURITYINSIGHTS/ONBOARDINGSTATES/WRITE",
+    "MICROSOFT.SECURITYINSIGHTS/SETTINGS/DELETE",
+    "MICROSOFT.SECURITYINSIGHTS/SETTINGS/WRITE",
+    "MICROSOFT.SECURITYINSIGHTS/SECURITYMLANALYTICSSETTINGS/DELETE",
+    "MICROSOFT.SECURITYINSIGHTS/SECURITYMLANALYTICSSETTINGS/WRITE",
+
+    //
+    // Azure SQL security controls
+    //
+    "MICROSOFT.SQL/SERVERS/AUDITINGSETTINGS/WRITE",
+    "MICROSOFT.SQL/SERVERS/DATABASES/AUDITINGSETTINGS/WRITE",
+    "MICROSOFT.SQL/SERVERS/EXTENDEDAUDITINGSETTINGS/WRITE",
+    "MICROSOFT.SQL/SERVERS/DATABASES/EXTENDEDAUDITINGSETTINGS/WRITE",
+    "MICROSOFT.SQL/SERVERS/ADVANCEDTHREATPROTECTIONSETTINGS/WRITE",
+    "MICROSOFT.SQL/SERVERS/DATABASES/ADVANCEDTHREATPROTECTIONSETTINGS/WRITE",
+    "MICROSOFT.SQL/SERVERS/AZUREADONLYAUTHENTICATIONS/WRITE",
+    "MICROSOFT.SQL/SERVERS/AZUREADONLYAUTHENTICATIONS/DELETE",
+    "MICROSOFT.SQL/SERVERS/DATABASES/SECURITYALERTPOLICIES/WRITE"
+]);
+
+AzureActivity
+| where CategoryValue =~ "Administrative"
+| where ActivityStatusValue =~ "Succeeded"
+| extend NormalizedOperation = toupper(OperationNameValue)
+| where NormalizedOperation in (SecurityControlOperations)
+
+//
+// Determine whether the control was modified or removed
+//
+| extend ChangeType = case(
+    NormalizedOperation endswith "/DELETE", "Delete",
+    NormalizedOperation endswith "/WRITE", "Modify",
+    "Other"
+)
+
+//
+// Categorise the affected security control
+//
+| extend ControlFamily = case(
+    NormalizedOperation startswith "MICROSOFT.CDN/PROFILES/SECURITYPOLICIES/",
+        "Front Door Security Policy",
+
+    NormalizedOperation startswith "MICROSOFT.NETWORK/FRONTDOORWEBAPPLICATIONFIREWALLPOLICIES/",
+        "Front Door WAF",
+
+    NormalizedOperation startswith "MICROSOFT.NETWORK/APPLICATIONGATEWAYWEBAPPLICATIONFIREWALLPOLICIES/",
+        "Application Gateway WAF",
+
+    NormalizedOperation startswith "MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/",
+        "Network Security Group",
+
+    NormalizedOperation startswith "MICROSOFT.NETWORK/AZUREFIREWALLS/"
+        or NormalizedOperation startswith "MICROSOFT.NETWORK/FIREWALLPOLICIES/",
+        "Azure Firewall",
+
+    NormalizedOperation startswith "MICROSOFT.NETWORK/DDOS",
+        "DDoS Protection",
+
+    NormalizedOperation startswith "MICROSOFT.AUTHORIZATION/POLICYASSIGNMENTS/",
+        "Azure Policy Assignment",
+
+    NormalizedOperation startswith "MICROSOFT.AUTHORIZATION/POLICYEXEMPTIONS/",
+        "Azure Policy Exemption",
+
+    NormalizedOperation startswith "MICROSOFT.INSIGHTS/DIAGNOSTICSETTINGS/"
+        or NormalizedOperation startswith "MICROSOFT.INSIGHTS/EXTENDEDDIAGNOSTICSETTINGS/"
+        or NormalizedOperation startswith "MICROSOFT.INSIGHTS/DATACOLLECTIONRULE"
+        or NormalizedOperation startswith "MICROSOFT.INSIGHTS/LOGPROFILES/",
+        "Security Telemetry",
+
+    NormalizedOperation startswith "MICROSOFT.SECURITY/",
+        "Microsoft Defender for Cloud",
+
+    NormalizedOperation startswith "MICROSOFT.SECURITYINSIGHTS/",
+        "Microsoft Sentinel",
+
+    NormalizedOperation startswith "MICROSOFT.SQL/",
+        "Azure SQL Security",
+
+    "Other Security Control"
+)
+
+//
+// Higher-level security function
+//
+| extend ControlCategory = case(
+    ControlFamily in (
+        "Front Door Security Policy",
+        "Front Door WAF",
+        "Application Gateway WAF",
+        "Network Security Group",
+        "Azure Firewall",
+        "DDoS Protection"
+    ),
+        "Preventative",
+
+    ControlFamily in (
+        "Security Telemetry",
+        "Microsoft Defender for Cloud",
+        "Microsoft Sentinel",
+        "Azure SQL Security"
+    ),
+        "Detective",
+
+    ControlFamily in (
+        "Azure Policy Assignment",
+        "Azure Policy Exemption"
+    ),
+        "Governance",
+
+    "Other"
+)
+
+//
+// Assign a basic event severity.
+// This is event prioritisation, not proof that a downgrade occurred.
+//
+| extend EventSeverity = case(
+    ChangeType == "Delete", "High",
+    ControlFamily == "Azure Policy Exemption", "Medium",
+    ChangeType == "Modify", "Medium",
+    "Low"
+)
+
+//
+// Extract identity information
+//
+| extend
+    CallerObjectId = tostring(Claims_d["http://schemas.microsoft.com/identity/claims/objectidentifier"]),
+    CallerAppId = tostring(Claims_d["appid"]),
+    CallerUPN = tostring(Claims_d["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"]),
+    CallerName = tostring(Claims_d["name"]),
+    AuthenticationMethods = tostring(Claims_d["amr"]),
+    AuthorizationAction = tostring(Authorization_d["action"]),
+    AuthorizationScope = tostring(Authorization_d["scope"])
+
+//
+// Produce a useful initiating-identity value regardless of
+// whether the caller is a user, service principal, or managed identity.
+//
+| extend InitiatingIdentity = coalesce(
+    CallerUPN,
+    CallerName,
+    Caller,
+    CallerObjectId,
+    CallerAppId
+)
+
+//
+// Final alert output
+//
+| project
+    TimeGenerated,
+    EventSeverity,
+    ControlCategory,
+    ControlFamily,
+    ChangeType,
+    OperationName = OperationNameValue,
+    ActivityStatus = ActivityStatusValue,
+    SubscriptionId,
+    ResourceGroup,
+    ResourceId,
+    ResourceProvider = ResourceProviderValue,
+    InitiatingIdentity,
+    Caller,
+    CallerUPN,
+    CallerObjectId,
+    CallerAppId,
+    CallerIpAddress,
+    AuthenticationMethods,
+    AuthorizationAction,
+    AuthorizationScope,
+    CorrelationId,
+    OperationId,
+    Properties_d
